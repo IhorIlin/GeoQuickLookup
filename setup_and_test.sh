@@ -3,6 +3,9 @@ set -euo pipefail
 
 echo "Checking environment..."
 
+# Detect OS
+OS="$(uname -s)"
+
 # Function to ensure a tool exists or install if possible
 install_tool() {
     local tool="$1"
@@ -30,12 +33,33 @@ install_tool() {
 install_tool python3
 install_tool clang++
 
-# Install Python dependencies
-echo "Installing Python dependencies..."
-python3 -m pip install --upgrade pip -q
-python3 -m pip install -q psutil
+# Install Python dependencies 
+echo "Checking Python dependencies..."
 
-# --- Handle CMake setup ---
+if python3 -c "import psutil" >/dev/null 2>&1; then
+    echo "'psutil' already installed — skipping."
+else
+    echo "Installing Python dependencies..."
+    if [[ "$OS" == "Darwin" ]]; then
+        python3 -m pip install -q --upgrade pip
+        python3 -m pip install -q psutil
+    elif [[ "$OS" == "Linux" ]]; then
+        if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y python3-psutil >/dev/null
+        else
+            echo "Unsupported Linux distro — please install 'python3-psutil' manually."
+            exit 1
+        fi
+    else
+        echo "Unsupported OS: $OS"
+        exit 1
+    fi
+fi
+
+echo "Python dependencies installed."
+
+# Handle CMake setup 
 CMAKE_ISO="$HOME/.cmake/cmake-3.0.0/bin/cmake"
 
 if [ -x "$CMAKE_ISO" ]; then
@@ -55,7 +79,7 @@ else
     fi
 fi
 
-# --- Build project ---
+# Build project
 echo "Building project..."
 cd geolocation
 rm -rf build
@@ -64,7 +88,7 @@ mkdir -p build && cd build
 "$CMAKE_ISO" .. > /dev/null
 make > /dev/null
 
-# --- Run tests ---
+# Run tests 
 echo "Running tests..."
 cd ..
 python3 geolocation_test.py --executable ./build/Sample_app --database database.csv
