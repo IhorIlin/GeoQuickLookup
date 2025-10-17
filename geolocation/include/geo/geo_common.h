@@ -13,7 +13,7 @@ inline bool parse_ip(const std::string &s, uint32_t &out) {
     std::istringstream ss(s);
     
     if ((ss >> a >> dot >> b >> dot >> c >> dot >> d) && dot == '.' &&
-        a < 256 && b < 256 && c < 256 && d < 255) {
+        a < 256 && b < 256 && c < 256 && d < 256) {
         out = (a << 24) | (b << 16) | (c << 8) | d;
          
         return true;
