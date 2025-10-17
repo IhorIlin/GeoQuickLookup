@@ -3,27 +3,7 @@
 #include <thread>
 #include <vector>
 #include <optional>
-
-using Database = std::vector<char>;
-
-Database LoadDatabase() {
-    // Pretending to use memory
-    Database database(1024 * 1024 * 5);
-    for (long i = 0; i < database.size(); i++) {
-        database[i] = 0xfe;
-    }
-
-    // Pretending this actually takes longer than it does..
-    std::this_thread::sleep_for(std::chrono::milliseconds(3333));
-
-    return database;
-}
-
-std::string PerformLookup(std::string ip) {
-    // Pretending to perform the lookup
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    return "US,New York";
-}
+#include "database.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {
@@ -34,20 +14,34 @@ int main(int argc, char** argv) {
     // Indicate that the app is ready
     std::cout << "READY" << std::endl;
 
-    std::optional<Database> database;
+    geo::Database db;
+    bool isLoaded = false;
+
     for (std::string cmd; std::getline(std::cin, cmd);) {
         if (cmd.find("LOAD") == 0) {
-            database = LoadDatabase();
-            std::cout << "OK" << std::endl;
+            std::string error;
 
+            if (db.load_csv(argv[1], error)) {
+                isLoaded = true;
+
+                std::cout << "OK" << std::endl;
+            } else {
+                std::cout << "ERR" << std::endl;
+            }
       } else if (cmd.find("LOOKUP") == 0) {
-            if (!database.has_value()){
+            if (!isLoaded) {
                 std::cerr << "error: Lookup requested before database was ever loaded" << std::endl;
                 return EXIT_FAILURE;
             }
+            
+            std::string ip = cmd.substr(7);
+            std::string label;
 
-            std::cout << PerformLookup(cmd.substr(7)) << std::endl;
-
+            if (db.lookup_str(ip, label)) {
+                std::cout << label << std::endl;
+            } else {
+                std::cout << "ERR" << std::endl;
+            }
       } else if (cmd.find("EXIT") == 0) {
             std::cout << "OK" << std::endl;
             break;
