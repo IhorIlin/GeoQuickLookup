@@ -1,45 +1,68 @@
 #include "database.h"
-#include <algorithm>
-#include <fstream>
 #include <iostream>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace geo {
 
+    Database::~Database() {
+        close();
+    }
+
+    void Database::close() {
+        if (base_) {
+            munmap(base_, fileSize_);
+            base_ = nullptr;
+        }
+        if (fileDescriptor_ >= 0) {
+            ::close(fileDescriptor_);
+            fileDescriptor_ = -1;
+        }
+        header_ = nullptr;
+        entries_ = nullptr;
+        stringTable_ = nullptr;
+    }
+
     bool Database::load(const std::string &path) {
-        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        close();
 
-        if (!file.is_open()) {
-            std::cerr << "Failed to open file " << path << std::endl;
+        fileDescriptor_ = open(path.c_str(), O_RDONLY);
+
+        if (fileDescriptor_ < 0) {
             return false;
         }
 
-        std::streamsize size = file.tellg();
-        file.seekg(0, std::ios::beg);
-        buffer_.resize(size);
+        struct stat st;
 
-        if (!file.read(reinterpret_cast<char *>(buffer_.data()), size)) {
-            std::cerr << "Failed to read file " << path << std::endl;
+        if (fstat(fileDescriptor_, &st) != 0) {
+            close();
             return false;
         }
 
-        file.close();
-
-        header_ = reinterpret_cast<const geo::Header *>(buffer_.data());
-
-        if (header_valid(header_, buffer_.size())) {
-            std::cerr << "Failed to validate file " << std::endl;
+        fileSize_ = st.st_size;
+        base_ = mmap(nullptr, fileSize_, PROT_READ, MAP_PRIVATE, fileDescriptor_, 0);
+        if (base_ == MAP_FAILED) {
+            base_ = nullptr;
+            close();
             return false;
         }
 
-        entries_ = reinterpret_cast<const Entry *>(buffer_.data() + sizeof(Header));
+        header_ = reinterpret_cast<const Header *>(base_);
+        if (!header_valid(header_, fileSize_)) {
+            close();
+            return false;
+        }
 
-        stringTable_ = reinterpret_cast<const char *>(reinterpret_cast<const uint8_t *>(entries_) + header_->count * sizeof(Entry));
+        entries_ = reinterpret_cast<const Entry *>(reinterpret_cast<const char *>(header_) + sizeof(Header));
+        stringTable_ = reinterpret_cast<const char *>(entries_) + header_->count * sizeof(Entry);
 
-        return true;
+         return true;
     }
 
     const char * Database::lookup(uint32_t ip) const {
-       if (!header_ || !entries_) return nullptr;
+       if (!header_) return nullptr;
 
         size_t left = 0;
         size_t right = header_->count;
