@@ -1,13 +1,11 @@
 #include <chrono>
 #include <iostream>
-#include <thread>
-#include <vector>
-#include <optional>
 #include "database.h"
+#include "geo/geo_common.h"
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        std::cout << "error: usage './sample_app <database.csv>'" << std::endl;
+        std::cout << "error: usage './Sample_app <database.bin>'" << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -15,37 +13,40 @@ int main(int argc, char** argv) {
     std::cout << "READY" << std::endl;
 
     geo::Database db;
-    bool isLoaded = false;
+    const std::string db_path = argv[1];
 
     for (std::string cmd; std::getline(std::cin, cmd);) {
         if (cmd.find("LOAD") == 0) {
-            std::string error;
-
-            if (db.load_csv(argv[1], error)) {
-                isLoaded = true;
-
+            if (db.load(db_path)) {
                 std::cout << "OK" << std::endl;
             } else {
                 std::cout << "ERR" << std::endl;
             }
-      } else if (cmd.find("LOOKUP") == 0) {
-            if (!isLoaded) {
+        } else if (cmd.find("LOOKUP") == 0) {
+            if (!db.loaded()) {
                 std::cerr << "error: Lookup requested before database was ever loaded" << std::endl;
                 return EXIT_FAILURE;
             }
-            
-            std::string ip = cmd.substr(7);
-            std::string label;
 
-            if (db.lookup_str(ip, label)) {
-                std::cout << label << std::endl;
+            std::string ip_str = cmd.substr(7);
+            uint32_t ip = 0;
+
+            if (!geo::parse_ip(ip_str, ip)) {
+                std::cout << "ERR" << std::endl;
+                continue;
+            }
+
+            const char *result = db.lookup(ip);
+
+            if (result) {
+                std::cout << result << std::endl;
             } else {
                 std::cout << "ERR" << std::endl;
             }
-      } else if (cmd.find("EXIT") == 0) {
+        } else if (cmd.find("EXIT") == 0) {
             std::cout << "OK" << std::endl;
             break;
-      } else {
+        } else {
             std::cerr << "error: Unknown command received" << std::endl;
             return EXIT_FAILURE;
         }

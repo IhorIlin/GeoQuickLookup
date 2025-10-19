@@ -1,160 +1,63 @@
 #include "database.h"
 #include <algorithm>
 #include <fstream>
-#include <sstream>
+#include <iostream>
 
 namespace geo {
 
-    //example of string 
-    //37253632,"37254143","US","United States of America","Ohio","Russia","40.234720","-84.410280"
+    bool Database::load(const std::string &path) {
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
 
-    void Database::split_csv_line_(const std::string &line, std::vector<std::string> &out) {
-        out.clear();
-        
-        std::string cur;
-        bool q = false;
-        
-        for (char c : line) {
-            if (c == '"') {
-                q = !q;
-                cur.push_back(c);
-            } else if (c == ',' && !q) {
-                out.push_back(cur);
-                cur.clear();
-            } else {
-                cur.push_back(c);
-            }
-        }
-        
-        out.push_back(cur);
-    }
-
-    bool Database::parse_u32_(const std::string &s, uint32_t &out) {
-        std::string number = geo::unquote(s);
-
-        if (number.empty()) return false;
-
-        try {
-            unsigned long value = std::stoul(number);
-            
-            if (value > 0xFFFFFFFFul) return false;
-
-            out = static_cast<uint32_t>(value);
-
-            return true;
-        } catch (...) {
-            return false;
-        }
-    }
-
-    bool Database::load_csv(const std::string &path, std::string &error) {
-        error.clear();
-        records_.clear();
-
-        std::ifstream in(path);
-        if (!in) {
-            error = "cannot open file: " + path;
+        if (!file.is_open()) {
+            std::cerr << "Failed to open file " << path << std::endl;
             return false;
         }
 
-        std::string line;
-        std::vector<std::string> cols;
-        records_.reserve(200000);
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        buffer_.resize(size);
 
-        while (std::getline(in, line)) {
-            if (line.empty()) continue;
-
-            split_csv_line_(line, cols);
-
-            if (cols.size() < 6) continue;
-
-            uint32_t start = 0;
-            uint32_t end = 0;
-
-            if (!parse_u32_(cols[0], start)) continue;
-            if (!parse_u32_(cols[1], end)) continue;
-            if (end < start) continue;
-
-            const std::string countryCode = geo::unquote(cols[2]);
-            const std::string cityName = geo::unquote(cols[5]);
-
-            std::string label = countryCode + "," + cityName;
-            
-            Record record;
-            record.start = start;
-            record.end = end;
-            record.label = label;
-
-            records_.push_back(record);
-        }
-
-        if (records_.empty()) {
-            error = "no valid rows parsed";
+        if (!file.read(reinterpret_cast<char *>(buffer_.data()), size)) {
+            std::cerr << "Failed to read file " << path << std::endl;
             return false;
         }
 
-        std::sort(records_.begin(), records_.end(), [](const Record &a, const Record &b) {
-            return a.start < b.start;
-        });
+        file.close();
 
-        merge_adjacent_();
+        header_ = reinterpret_cast<const geo::Header *>(buffer_.data());
+
+        if (header_valid(header_, buffer_.size())) {
+            std::cerr << "Failed to validate file " << std::endl;
+            return false;
+        }
+
+        entries_ = reinterpret_cast<const Entry *>(buffer_.data() + sizeof(Header));
+
+        stringTable_ = reinterpret_cast<const char *>(reinterpret_cast<const uint8_t *>(entries_) + header_->count * sizeof(Entry));
 
         return true;
     }
 
-    void Database::merge_adjacent_() {
-        if (records_.empty()) return;
+    const char * Database::lookup(uint32_t ip) const {
+       if (!header_ || !entries_) return nullptr;
 
-        std::vector<Record> merged;
-        merged.reserve(records_.size());
+        size_t left = 0;
+        size_t right = header_->count;
 
-        Record cur = records_[0];
+        while (left < right) {
+            size_t middle = (left + right) / 2;
+            const Entry &entry = entries_[middle];
 
-        for (size_t i = 1; i < records_.size(); ++i) {
-            const Record &r = records_[i];
-            if (r.start == cur.end + 1 && r.label == cur.label) {
-                cur.end = r.end;
+            if (ip < entry.start) {
+                right = middle;
+            } else if (ip > entry.end) {
+                left = middle + 1;
             } else {
-                merged.push_back(std::move(cur));
-                cur = r;
-            }
-        }
-        merged.push_back(std::move(cur));
-        records_.swap(merged);
-    }
-
-    bool Database::lookup_str(const std::string &ip_str, std::string &out_label) const {
-        uint32_t ip = 0;
-        
-        if (!parse_ip(ip_str, ip)) return false;
-
-        return lookup(ip, out_label);
-    }
-
-    bool Database::lookup(uint32_t ip, std::string &out_label) const {
-        if (records_.empty()) return false;
-
-        size_t lo = 0, hi = records_.size();
-        while (lo < hi) {
-            size_t mid = (lo + hi) / 2;
-            if (records_[mid].start <= ip) {
-                lo = mid + 1;
-            } else {
-                hi = mid;
+                return stringTable_ + entry.label_offset;
             }
         }
 
-        if (lo == 0) return false;
-
-        const Record &cand = records_[lo - 1];
-
-        if (ip <= cand.end) {
-            out_label = cand.label;
-            
-            return true;
-        }
-
-        return false;
+        return nullptr;
     }
 }
 

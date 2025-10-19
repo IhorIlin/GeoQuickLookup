@@ -1,24 +1,24 @@
-#pragma once 
-#include "geo/geo_common.h"
+#pragma once
+#include "geo/bin_format.h"
 #include <string>
 #include <vector>
+
 
 namespace geo {
 
 class Database {
     public:
     
-    bool load_csv(const std::string &path, std::string &error);
-    bool lookup_str(const std::string &ip_str, std::string &out_label) const;
-    bool lookup(uint32_t ip, std::string &out_label) const;
-    bool loaded() const { return !records_.empty(); }
+    bool load(const std::string &path);
+    const char * lookup(uint32_t ip) const;
+    bool loaded() const { return header_ != nullptr; }
 
     private:
 
-    std::vector<Record> records_;
-    void merge_adjacent_();
-    static void split_csv_line_(const std::string &line, std::vector<std::string> &out);
-    static bool parse_u32_(const std::string &s, uint32_t &uot);
+    const geo::Header *header_ = nullptr;
+    const geo::Entry *entries_ = nullptr;
+    const char *stringTable_ = nullptr;
+    std::vector<uint8_t> buffer_;
 };
 
 }

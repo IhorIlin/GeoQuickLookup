@@ -21,7 +21,7 @@ namespace geo {
 
         if (std::memcmp(header->magic, "NORD", 4) != 0) return false;
 
-        if (sizeof(Header) + header->count * sizeof(Entry) + header->str_bytes > file_size) return false;
+        if (sizeof(Header) + header->count * sizeof(Entry) + header->str_bytes >= file_size) return false;
 
         return true;
     }

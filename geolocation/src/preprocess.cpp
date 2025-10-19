@@ -42,7 +42,7 @@ bool preprocess_csv_to_bin(const std::string &csv_path, const std::string &bin_p
         uint32_t start = std::stoul(geo::unquote(start_str));
         uint32_t end = std::stoul(geo::unquote(end_str));
 
-        Row row = {start, end, countryCode, city};
+        Row row = {start, end, geo::unquote(countryCode), geo::unquote(city)};
 
         rows.push_back(row);
     }
@@ -53,6 +53,29 @@ bool preprocess_csv_to_bin(const std::string &csv_path, const std::string &bin_p
         return a.start < b.start;
     });
 
+    std::vector<geo::Entry> entries;
+    std::vector<char> string_table;
+    entries.reserve(rows.size());
+
+    for (const auto &row : rows) {
+        std::string label = row.countryCode + "," + row.cityName;
+        uint32_t offset = static_cast<uint32_t>(string_table.size());
+        string_table.insert(string_table.end(), label.begin(), label.end());
+        string_table.push_back('\0');
+
+        geo::Entry entry;
+        entry.start = row.start;
+        entry.end = row.end;
+        entry.label_offset = offset;
+
+        entries.push_back(entry);
+    }
+
+    geo::Header header;
+    std::memcpy(header.magic, "NORD", 4);
+    header.count = static_cast<uint32_t>(entries.size());
+    header.str_bytes = static_cast<uint32_t>(string_table.size());
+
     std::ofstream out(bin_path, std::ios::binary);
 
     if (!out) {
@@ -60,26 +83,9 @@ bool preprocess_csv_to_bin(const std::string &csv_path, const std::string &bin_p
         return false;
     }
 
-    geo::Header header;
-    std::memcpy(header.magic, "NORD", 4);
-    header.count = static_cast<uint32_t>(rows.size());
-    header.str_bytes = 0;
-
     out.write(reinterpret_cast<char *>(&header), sizeof(header));
-
-    for (const auto &row : rows) {
-        geo::Entry entry;
-        entry.start = row.start;
-        entry.end = row.end;
-
-        std::string label = row.countryCode + "," + row.cityName;
-        uint32_t offset = static_cast<uint32_t>(out.tellp());
-
-        entry.label_offset = offset;
-
-        out.write(reinterpret_cast<const char *>(&entry), sizeof(entry));
-        out.write(label.c_str(), label.size() + 1);
-    }
+    out.write(reinterpret_cast<char *>(entries.data()), entries.size() * sizeof(geo::Entry));
+    out.write(string_table.data(), string_table.size());
 
     std::cout << "Wrote binary file: " << bin_path << std::endl;
 
