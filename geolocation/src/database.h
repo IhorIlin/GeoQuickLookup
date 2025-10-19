@@ -18,7 +18,6 @@ class Database {
     std::vector<Record> records_;
     void merge_adjacent_();
     static void split_csv_line_(const std::string &line, std::vector<std::string> &out);
-    static std::string unquote_(std::string s);
     static bool parse_u32_(const std::string &s, uint32_t &uot);
 };
 

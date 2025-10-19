@@ -5,14 +5,6 @@
 
 namespace geo {
 
-    std::string Database::unquote_(std::string s) {
-        if (!s.empty() && s.front() == '"' && s.back() == '"' && s.size() >= 2) {
-            s = s.substr(1, s.size() - 2);
-        }
-
-        return s;
-    }
-
     //example of string 
     //37253632,"37254143","US","United States of America","Ohio","Russia","40.234720","-84.410280"
 
@@ -38,16 +30,16 @@ namespace geo {
     }
 
     bool Database::parse_u32_(const std::string &s, uint32_t &out) {
-        std::string t = unquote_(s);
+        std::string number = geo::unquote(s);
 
-        if (t.empty()) return false;
+        if (number.empty()) return false;
 
         try {
-            unsigned long v = std::stoul(t);
+            unsigned long value = std::stoul(number);
             
-            if (v > 0xFFFFFFFFul) return false;
+            if (value > 0xFFFFFFFFul) return false;
 
-            out = static_cast<uint32_t>(v);
+            out = static_cast<uint32_t>(value);
 
             return true;
         } catch (...) {
@@ -83,8 +75,8 @@ namespace geo {
             if (!parse_u32_(cols[1], end)) continue;
             if (end < start) continue;
 
-            const std::string countryCode = unquote_(cols[2]);
-            const std::string cityName = unquote_(cols[5]);
+            const std::string countryCode = geo::unquote(cols[2]);
+            const std::string cityName = geo::unquote(cols[5]);
 
             std::string label = countryCode + "," + cityName;
             
