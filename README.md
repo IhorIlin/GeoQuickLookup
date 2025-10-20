@@ -1,3 +1,196 @@
+# Geolocation lookup
+Efficient IP-to-Location lookup implementation in C++ with a preprocessed binary database format and memory-mapped data access.
+
+## Overview
+This project loads a large IP-to-location database (`database.csv`) and performs high-speed lookups for given IPv4 addresses.
+
+Two main components are included:
+
+1. **Geo_processor** - converts a CSV file into a compact binary database (`database.bin`).
+2. **Sample_app** - loads the binary database using **memory mapping (mmap)** and performs lookups efficiently in O(log N) time.
+
+## Supported OS
+Solution was designed for `Linux` and `MacOS` operating systems.
+
+## Design
+
+### On-disk data format (`database.bin`)
+
+The binary file is composed of:
+```
+Header
+Entries []
+StringTable 
+```
+Header struct description:
+```
+struct Header {
+    char magic[4];      Signature "NORD"
+    uint32_t count;     Number of entries
+    uint32_t str_bytes; Total size of the string table (for validation)
+};
+```
+Entry struct description:
+```
+struct Entry {
+    uint32_t start;        First IP address in range
+    uint32_t end;          Last IP address in range
+    uint32_t label_offset; Offset from file start ex. "CC, City" string
+};
+```
+## In-memory layout
+
+When the app starts, the binary file is **memory-mapped** using `mmap(2)`:
+```
+mmap region -> Header -> Entries -> Strings
+```
+No parsing or copying occurs the file is accessed **directly from memory**, giving near-zero load time and very low memory overhead.
+
+Lookups are implemented as a **binary search** over sorted IP ranges (`Entry.start`).
+
+---
+
+## Performance (MacBook Pro M1, 16 GB RAM)
+
+| Metric              | Value       |
+|---------------------|-------------|
+| Load time           | ~0.1 ms     |
+| Memory usage        | ~1.3 MB     |
+| Average lookup time | 20–40 µs    |
+| Score (test script) | ~50+ points |
+
+## Performance (Ubuntu 24.04.2 LTS (GNU/Linux 6.8.0-83-generic x86_64) 4 GB RAM)
+
+| Metric              | Value        |
+|---------------------|--------------|
+| Load time           | ~231 µs      |
+| Memory usage        | ~4.3 MB      |
+| Average lookup time | 30–125 µs    |
+| Score (test script) | ~120+ points |
+---
+## Preprocessing
+
+The preprocessing converts CSV data into a compact binary format.  
+Implemented in `preprocess.cpp`.
+
+### Algorithm
+1. Parse each CSV line (`start`, `end`, `countryCode`, `cityName`).
+2. Sort rows by `start` IP.
+3. Write:
+  - Header (`NORD`, `count`, `str_bytes`)
+  - All entries (`Entry` structs)
+  - All `"CC,City\0"` strings.
+
+### Lookup logic
+Implemented in database.cpp and database.h:
+1.	Open database.bin using mmap.
+2.	Validate header ("NORD", file size consistency).
+3.	Perform binary search:
+```
+size_t left = 0;
+size_t right = header_->count;
+while (left < right) {
+    size_t middle = (left + right) / 2;
+    const Entry &entry = entries_[middle];
+
+    if (ip < entry.start) {
+        right = middle;
+    } else if (ip > entry.end) {
+        left = middle + 1;
+    } else {
+        return stringTable_ + entry.label_offset;
+    }
+}
+```
+4. Return "CC,City" or nullptr.
+---
+
+## Manual compile and setup 
+
+In order to build and test the project manually, make sure the following tools are installed on your system:
+
+| Tool                   | Linux                         | macOS                           |
+|------------------------|-------------------------------|---------------------------------|
+| CMake                  | sudo apt install cmake        | brew install cmake              |
+| Make                   | sudo apt install make         | (included with Xcode CLI tools) |
+| g++ / clang++          | sudo apt install g++          | (included with Xcode CLI tools) |
+| Python 3               | sudo apt install python3      | brew install python3            |
+| pip                    | sudo apt install python3-pip  | (included with Homebrew Python) |
+| psutil (Python module) | python3 -m pip install psutil | python3 -m pip install psutil   |
+
+## Optional utilities
+**gunzip** - used to decompress `database.csv.gz`
+```
+sudo apt install gzip - for Linux
+```
+```
+brew install gzip - for macOS
+```
+You can verify everything is installed correctly by running:
+```
+cmake --version
+g++ --version
+python3 --version
+```
+From root folder of repo perform these commands:
+```bash
+
+# 1. Create build directory
+mkdir -p geolocation/build
+cd geolocation build
+
+# 2. Generate Makefiles
+cmake ..
+ 
+# 3. Compile all targets
+make 
+```
+## Run Preprocessing and Tests
+```bash
+
+# Make sure that you unzip database.csv.gz file performing command
+gunzip -k database.csv.gz (-k argument to keep original file)
+
+# Generate binary database file
+./Geo_processor ../database.csv ../database.bin
+
+# Run validation tests
+python3 ../geolocation_test.py --executable ./Sample_app --database ../database.bin
+```
+
+##  Automatically build and test the project
+Open your terminal in the project’s root folder (where the README.md is) and run:
+```bash
+
+bash setup_and_run.sh 
+```
+In console output you should see test results - for example:
+```
+Database loaded Memory usage: 3.38mb Load time: 182μs
+OK    1.0.0.0 US Los Angeles Memory usage: 4.0mb Lookup time: 182μs
+OK    71.6.28.0 US San Jose Memory usage: 4.38mb Lookup time: 81μs
+OK    71.6.28.255 US San Jose Memory usage: 4.38mb Lookup time: 30μs
+OK    71.6.29.0 US Concord Memory usage: 4.38mb Lookup time: 26μs
+OK    53.103.144.0 DE Stuttgart Memory usage: 4.75mb Lookup time: 77μs
+OK    53.255.255.255 DE Stuttgart Memory usage: 4.75mb Lookup time: 26μs
+OK    54.0.0.0 US Rahway Memory usage: 4.75mb Lookup time: 21μs
+OK    223.255.255.255 AU Brisbane Memory usage: 5.25mb Lookup time: 94μs
+OK    5.44.16.0 GB Hastings Memory usage: 5.5mb Lookup time: 54μs
+OK    8.24.99.0 US Hastings Memory usage: 5.75mb Lookup time: 53μs
+Final points for 10 measurements:  122.686581
+```
+
+---
+
+
+
+
+
+
+
+
+
+
 # A challenge for Great Low Level Developer
 
 ## Prerequisites
